@@ -1,5 +1,5 @@
 ---
-title: "BP-42: New Client API for listing ledgers "
+title: "BP-42: New Client API for ledgers"
 issue: https://github.com/apache/bookkeeper/<issue-number>
 state: "Under Discussion"
 release: "x.y.z"
@@ -7,20 +7,24 @@ release: "x.y.z"
 
 ### Motivation
 
-The new Client API (`org.apache.bookkeeper.client.api.BookKeeper`) aims to replace obsolete BookKeeperAdmin API (`org.apache.bookkeeper.client.BookKeeperAdmin`) but some features are not implemented yet. 
+The new Client API (`org.apache.bookkeeper.client.api.BookKeeper`) aims to replace obsolete BookKeeper API but some features are not implemented yet, like the functionalities provided by `BookKeeperAdmin`. 
 For example, it does not expose a method to list available ledgers, comparable to `BookKeeperAdmin#listLedgers()`.
 
-The goal is to extends the Client API for listing ledgers.
+#### Ledgers listing 
+The goal here is to extends the Client API for listing ledgers. Moreover current method  `BookKeeperAdmin#listLedgers()` does not report errors from the metadata driver; for instance, if an IOException occurs during iterator flow, the error is not visible to the caller and the iteration is stopped (e.g. hasNext will return false). However there is no intention to change this behaviour in this proposal.
 
-Moreover current method  `BookKeeperAdmin#listLedgers()` does not kindly handle the network errors; for instance, if an IOException occurs during iterator flow, the error is not visible to the caller and the iteration is stopped (e.g. hasNext will return false). This can cause vary issues.
-However there is no intention to change this behaviour in this proposal.
+#### Simpler access to LedgerMetadata
+The goal here is to streamline the access to `LedgerMetadata`, directly from BookKeeper interface.
 
+#### Ledger id inside LedgerMetadata
+Currently there is no `ledgerId` property inside `LedgerMetadata` interface, this can be helpful in some contexts.
 
 
 ### Public Interfaces
 
 This proposal adds new interfaces to `org.apache.bookkeeper.client.api` package, similar to `org.apache.bookkeeper.client.api.BookKeeper` methods. 
 
+    // new interface
     interface LedgersIterator {
 
         boolean hasNext() throws IOException;
@@ -28,7 +32,7 @@ This proposal adds new interfaces to `org.apache.bookkeeper.client.api` package,
         long next() throws IOException;
     }
 
-
+    // new interface
     interface ListLedgersResult extends AutoCloseable {
 
         LedgersIterator iterator();
@@ -36,6 +40,7 @@ This proposal adds new interfaces to `org.apache.bookkeeper.client.api` package,
         Iterable<Long> toIterable();
     }
 
+    // new interface
     interface ListLedgersResultBuilder extends OpBuilder<Void>{
 
         // empty now, maybe some filters in future
@@ -46,16 +51,34 @@ This proposal adds new interfaces to `org.apache.bookkeeper.client.api` package,
         ....
 
         ListLedgersResultBuilder newListLedgersOp();
+
+        CompleatableFuture<LedgerMetadata> getLedgerMetadata(long ledgerId);
+
     }
 
+    interface LedgerMetadata {
+        
+        ....
+
+        long getLedgerId();
+
+    }
 
 ### Proposed Changes
 
+#### Ledgers listing
+
 The implementation is pretty similar to `BookKeeperAdmin#listLedgers()` but there are few enhancements:
-- Better IO errors handling, since the IOException is directly thrown up to caller, allowing user to handle network errors in a more suitable way.
+- Handle metadata driver errors, since the IOException is directly thrown up to caller, allowing user to handle network errors in a more suitable way.
 - Leave the possibility to restrict/filter returned ledgers in future, without API breaking changes   
 
 The implementation will be the same used in BookKeeperAdmin, iterating over `LedgerRangeIterator`, which already handles ledgers search properly.
+
+#### Simpler access to LedgerMetadata
+The implementation will use LedgerManager to retrieve metadata for a specified ledgerId.  
+
+#### Ledger id inside LedgerMetadata
+Each time a LedgerMetadata instance is created, the ledgerId is known, so it is trivial to set it in the instance.
 
 ### Compatibility, Deprecation, and Migration Plan
 
@@ -67,4 +90,4 @@ This proposal needs only new unit tests, other tests must continue pass without 
 
 ### Rejected Alternatives
 
-The API design is the best option since it keeps the coherence to `org.apache.bookkeeper.client.api.BookKeeper` current methods, designed with Builder pattern.
+An alternative could be creates a new API similar to BookKeeperAdmin but it is better to invest enhancing `org.apache.bookkeeper.client.api.BookKeeper` API.
